@@ -3,8 +3,10 @@ import numpy as np
 from time import sleep
 
 from deoxys.franka_interface import FrankaInterface
+import deoxys.proto.franka_interface.franka_controller_pb2 as franka_controller_pb2
 from deoxys.utils.config_utils import get_default_controller_config
 from deoxys_control.osc_control import move_to_target_pose, reset_joints_to  # borrowing this to move based on deltas
+from deoxys_control.delta_gripper import delta_gripper, reset_gripper
 from deoxys.utils.log_utils import get_deoxys_example_logger
 
 
@@ -25,20 +27,25 @@ reset_joint_positions = [
         0.8480939705504309,
     ]
 
-# reset joints to home position
-reset_joints_to(robot_interface, reset_joint_positions)
 
+reset_joints_to(robot_interface, reset_joint_positions)  # reset joints to home position
+reset_gripper(robot_interface, logger)  # reset gripper to open
 
+breakpoint()
 # deltas = [x, y, z, roll, pitch, yaw, gripper]
-deltas = [0.1, 0, 0, 0, 0, 0, 0]
+deltas = [.01, 0, 0, 0, 0, 0, 0]
+for i in range(10):
 
-move_to_target_pose(
-        robot_interface,
-        controller_type,
-        controller_cfg,
-        target_delta_pose=deltas[:6],
-        num_steps=80,
-        num_additional_steps=40,
-        interpolation_method="linear",
-    )
+    move_to_target_pose(
+            robot_interface,
+            controller_type,
+            controller_cfg,
+            target_delta_pose=deltas[:6],
+            num_steps=40,
+            num_additional_steps=0,
+            interpolation_method="linear",
+        )
+    delta_gripper(robot_interface, logger, deltas[6])
+    sleep(1)
+
 robot_interface.close()

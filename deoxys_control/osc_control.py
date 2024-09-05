@@ -61,7 +61,7 @@ def osc_move(robot_interface, controller_type, controller_cfg, target_pose, num_
         action_pos = np.clip(action_pos, -1.0, 1.0)
         action_axis_angle = np.clip(action_axis_angle, -0.5, 0.5)
 
-        action = action_pos.tolist() + action_axis_angle.tolist() + [-1.0]
+        action = action_pos.tolist() + action_axis_angle.tolist() + [-1.0]  # this might be what is opening the gripper on every movement?
         logger.info(f"Axis angle action {action_axis_angle.tolist()}")
         # print(np.round(action, 2))
         robot_interface.control(
@@ -118,13 +118,13 @@ def move_to_target_pose(
         (target_pos, target_quat),
         num_steps,
     )
-    osc_move(
-        robot_interface,
-        controller_type,
-        controller_cfg,
-        (target_pos, target_quat),
-        num_additional_steps,
-    )
+    # osc_move(
+    #     robot_interface,
+    #     controller_type,
+    #     controller_cfg,
+    #     (target_pos, target_quat),
+    #     num_additional_steps,
+    # )
 
 
 def main():

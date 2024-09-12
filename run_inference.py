@@ -7,6 +7,7 @@ from openteach.utils.network import ZMQCameraSubscriber
 
 # openVLA
 from transformers import AutoModelForVision2Seq, AutoProcessor
+from experiments.robot.robot_utils import get_vla_action
 
 # deoxys_control
 from deoxys.franka_interface import FrankaInterface
@@ -15,6 +16,7 @@ from deoxys.utils.config_utils import get_default_controller_config
 from deoxys_control.osc_control import move_to_target_pose, reset_joints_to  # borrowing this to move based on deltas
 from deoxys_control.delta_gripper import delta_gripper, reset_gripper
 from deoxys.utils.log_utils import get_deoxys_example_logger
+from deoxys.utils.transform_utils import quat2axisangle
 
 # General
 import torch
@@ -46,18 +48,24 @@ def main():
 
     # Load Processor & VLA
     processor = AutoProcessor.from_pretrained("openvla/openvla-7b", trust_remote_code=True)
-    vla = AutoModelForVision2Seq.from_pretrained(
+    model = AutoModelForVision2Seq.from_pretrained(
         "openvla/openvla-7b",
         torch_dtype=torch.bfloat16,
         device_map="auto",  # should use all available GPUs
         low_cpu_mem_usage=True,
         trust_remote_code=True
     )
+    # unnorm_key = "dlr_edan_shared_control_converted_externally_to_rlds"  # cam near base angled towards table
+    # unnorm_key = "nyu_franka_play_dataset_converted_externally_to_rlds"  # franka robot cam angled away from base
+    unnorm_key = "stanford_hydra_dataset_converted_externally_to_rlds"  # franka robot cam angled towards base
+    # unnorm_key = "utaustin_mutex"  # franka robot cam straight on: this gives much bigger values than other keys so the robot moves fast
+    task_label = "move coke can near taylor swift"  # task to perform
+    prompt = f"In: What action should the robot take to {task_label} ?\nOut:"
 
     # Configure Camera Stream
     image_subscriber = ZMQCameraSubscriber(
             host = "143.215.128.151",
-            port = "10007",
+            port = "10007",  # 5 - top, 6 - side, 7 - front
             topic_type = 'RGB'
         )
     # np array for storing action values
@@ -73,14 +81,37 @@ def main():
             if color_frame is None:
                 continue
 
-            # Convert the frame to PIL Image
-            # video_frame = cv2.resize(video_frame, (224, 224))
-            image: Image.Image = Image.fromarray(color_frame)
-            prompt = "In: What action should the robot take to {pick up the stuffed animal}?\nOut:"
+            # breakpoint()
+            # color_frame = color_frame[68:292, 208:432]  # center crop 224x224
+            color_frame = cv2.resize(color_frame[:, 140:500], (224, 224))  # make the image square then scale to 224x224
 
-            # Predict Action (7-DoF; un-normalize for BridgeData V2)
-            inputs = processor(prompt, image).to("cuda:0", dtype=torch.bfloat16)
-            action = vla.predict_action(**inputs, unnorm_key="nyu_franka_play_dataset_converted_externally_to_rlds", do_sample=False)  # action[:6] = pose, action[6] = gripper
+            # Convert the frame to PIL Image
+            image: Image.Image = Image.fromarray(color_frame)
+
+            observation = {
+                        "full_image": color_frame,
+                        "state": np.concatenate(
+                            (robot_interface.last_eef_quat_and_pos[1].flatten(),
+                             quat2axisangle(robot_interface.last_eef_quat_and_pos[0]),
+                             [robot_interface.last_gripper_q])
+                        ),
+                    }
+            # breakpoint()
+            # Query model to get action
+
+            action = get_vla_action(
+                model,
+                processor,
+                "openvla",
+                observation,
+                task_label,
+                unnorm_key,
+                # center_crop=True
+            )
+
+            # # Predict Action (7-DoF; un-normalize)
+            # inputs = processor(prompt, image).to("cuda:0", dtype=torch.bfloat16)
+            # action = vla.predict_action(**inputs, unnorm_key="nyu_franka_play_dataset_converted_externally_to_rlds", do_sample=False)
             print(action)
 
             move_to_target_pose(

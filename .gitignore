@@ -147,10 +147,12 @@ dmypy.json
 # Caches and Datasets
 cache/
 data/
+datasets/
+all_play_data_diverse/
 
 # Rollout videos and wandb logs
 rollouts/
 wandb/
 
 # test images
-still_image.png
+*.png

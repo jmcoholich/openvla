@@ -4,6 +4,7 @@ import json
 import os
 import time
 
+import cv2
 import numpy as np
 import tensorflow as tf
 import torch
@@ -149,11 +150,11 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         # Convert back to original data type
         image = tf.clip_by_value(image, 0, 1)
         image = tf.image.convert_image_dtype(image, orig_dtype, saturate=True)
-
+        # breakpoint()
+        cv2.imshow("center_crop", image.numpy())
         # Convert back to PIL Image
         image = Image.fromarray(image.numpy())
         image = image.convert("RGB")
-
     # Build VLA prompt
     if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
         prompt = (

@@ -63,11 +63,12 @@ def osc_move(robot_interface, controller_type, controller_cfg, target_pose, num_
 
         action = action_pos.tolist() + action_axis_angle.tolist() + [-1.0]  # this might be what is opening the gripper on every movement?
         logger.info(f"Axis angle action {action_axis_angle.tolist()}")
-        # print(np.round(action, 2))
+        print(f"osc action: {np.round(action, 2)}")
         robot_interface.control(
             controller_type=controller_type,
             action=action,
             controller_cfg=controller_cfg,
+            verbose=False,
         )
     return action
 

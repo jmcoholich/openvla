@@ -153,6 +153,7 @@ all_play_data_diverse/
 # Rollout videos and wandb logs
 rollouts/
 wandb/
+runs/
 
 # test images
 *.png

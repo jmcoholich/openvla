@@ -151,7 +151,6 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         image = tf.clip_by_value(image, 0, 1)
         image = tf.image.convert_image_dtype(image, orig_dtype, saturate=True)
         # breakpoint()
-        cv2.imshow("center_crop", image.numpy())
         # Convert back to PIL Image
         image = Image.fromarray(image.numpy())
         image = image.convert("RGB")
@@ -162,9 +161,21 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         )
     else:  # OpenVLA
         prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+        # prompt = task_label.lower()
 
     # Process inputs.
+    # This is what is changing images to have 6 channels but it is still a black box to me.
+    # if the image going in here is the same as what goes into training then it should be fine.
+    # cv2.imshow("model input", np.array(image))
     inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
+
+    # breakpoint()
+
+    # cv2.imshow("first3", inputs["pixel_values"].cpu()[0].permute(1, 2, 0)[:, :, :3].float().numpy())
+    # while True:
+    #     if cv2.waitKey(1) & 0xFF == ord('q'):
+    #         break
+    # breakpoint()
 
     # Get action.
     action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)

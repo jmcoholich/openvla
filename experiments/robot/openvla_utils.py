@@ -128,7 +128,7 @@ def crop_and_resize(image, crop_scale, batch_size):
 def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False):
     """Generates an action with the VLA policy."""
     image = Image.fromarray(obs["full_image"])
-    image = image.convert("RGB")
+    # image = image.convert("RGB")
 
     # (If trained with image augmentations) Center crop image and then resize back up to original size.
     # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), multiply
@@ -167,14 +167,17 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # This is what is changing images to have 6 channels but it is still a black box to me.
     # if the image going in here is the same as what goes into training then it should be fine.
     # cv2.imshow("model input", np.array(image))
+    # while True:
+    #     if cv2.waitKey(1) & 0xFF == ord('q'):
+    #         break
     inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
 
     # breakpoint()
 
     # cv2.imshow("first3", inputs["pixel_values"].cpu()[0].permute(1, 2, 0)[:, :, :3].float().numpy())
     # while True:
-    #     if cv2.waitKey(1) & 0xFF == ord('q'):
-    #         break
+        # if cv2.waitKey(1) & 0xFF == ord('q'):
+        #     break
     # breakpoint()
 
     # Get action.

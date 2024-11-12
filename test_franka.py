@@ -7,16 +7,18 @@ from openteach.utils.network import ZMQCameraSubscriber
 
 # openVLA
 from transformers import AutoModelForVision2Seq, AutoProcessor
-from experiments.robot.robot_utils import get_vla_action
+from experiments.robot.robot_utils import get_vla_action, normalize_gripper_action
+from prismatic.vla.action_tokenizer import ActionTokenizer
 
-# deoxys_control
+# deoxys
 from deoxys.franka_interface import FrankaInterface
 import deoxys.proto.franka_interface.franka_controller_pb2 as franka_controller_pb2
 from deoxys.utils.config_utils import get_default_controller_config
-from deoxys_control.osc_control import move_to_target_pose, reset_joints_to  # borrowing this to move based on deltas
-from deoxys_control.delta_gripper import delta_gripper, reset_gripper
 from deoxys.utils.log_utils import get_deoxys_example_logger
-from deoxys.utils.transform_utils import quat2axisangle
+from deoxys.utils.transform_utils import quat2axisangle, mat2quat, euler2mat
+from deoxys.experimental.motion_utils import reset_joints_to
+
+from openteach.utils.timer import FrequencyTimer
 
 # jaca data
 import pickle as pkl
@@ -30,6 +32,10 @@ import argparse
 import math
 import os
 import json
+import sys
+import importlib
+import tensorflow_datasets as tfds
+from easydict import EasyDict
 
 parser = argparse.ArgumentParser()
 parser.add_argument("demo", type=str, help="The name of the demonstration to visualize")
@@ -70,71 +76,61 @@ _AXES2TUPLE = {
 
 _TUPLE2AXES = dict((v, k) for k, v in _AXES2TUPLE.items())
 
+DEFAULT_CONTROLLER = EasyDict({
+    'controller_type': 'OSC_POSE',
+    'is_delta': True,
+    'traj_interpolator_cfg': {
+        'traj_interpolator_type': 'LINEAR_POSE',
+        'time_fraction': 0.3
+    },
+    'Kp': {
+        'translation': [250.0, 250.0, 250.0],
+        'rotation': [250.0, 250.0, 250.0]
+    },
+    'action_scale': {
+        'translation': 0.5,
+        'rotation': 1.0
+    },
+    'residual_mass_vec': [0.0, 0.0, 0.0, 0.0, 0.1, 0.5, 0.5],
+    'state_estimator_cfg': {
+        'is_estimation': False,
+        'state_estimator_type': 'EXPONENTIAL_SMOOTHING',
+        'alpha_q': 0.9,
+        'alpha_dq': 0.9,
+        'alpha_eef': 1.0,
+        'alpha_eef_vel': 1.0
+    }
+})
 
-def mat2euler(rmat, axes="sxyz"):  # from /home/ripl/deoxys_control/deoxys/deoxys/utils/transform_utils.py
-    """
-    Converts given rotation matrix to euler angles in radian.
-
-    Args:
-        rmat (np.array): 3x3 rotation matrix
-        axes (str): One of 24 axis sequences as string or encoded tuple (see top of this module)
-
-    Returns:
-        np.array: (r,p,y) converted euler angles in radian vec3 float
-    """
-    try:
-        firstaxis, parity, repetition, frame = _AXES2TUPLE[axes.lower()]
-    except (AttributeError, KeyError):
-        firstaxis, parity, repetition, frame = axes
-
-    i = firstaxis
-    j = _NEXT_AXIS[i + parity]
-    k = _NEXT_AXIS[i - parity + 1]
-
-    M = np.array(rmat, dtype=np.float32, copy=False)[:3, :3]
-    if repetition:
-        sy = math.sqrt(M[i, j] * M[i, j] + M[i, k] * M[i, k])
-        if sy > EPS:
-            ax = math.atan2(M[i, j], M[i, k])
-            ay = math.atan2(sy, M[i, i])
-            az = math.atan2(M[j, i], -M[k, i])
-        else:
-            ax = math.atan2(-M[j, k], M[j, j])
-            ay = math.atan2(sy, M[i, i])
-            az = 0.0
-    else:
-        cy = math.sqrt(M[i, i] * M[i, i] + M[j, i] * M[j, i])
-        if cy > EPS:
-            ax = math.atan2(M[k, j], M[k, k])
-            ay = math.atan2(-M[k, i], cy)
-            az = math.atan2(M[j, i], M[i, i])
-        else:
-            ax = math.atan2(-M[j, k], M[j, j])
-            ay = math.atan2(-M[k, i], cy)
-            az = 0.0
-
-    if parity:
-        ax, ay, az = -ax, -ay, -az
-    if frame:
-        ax, az = az, ax
-    return np.array((ax, ay, az), dtype=np.float32)
 
 def main(args):
-    # load data
-    # Load example data and print data structure
+    robot_interface = FrankaInterface(
+        os.path.join('/home/ripl/openteach/configs', 'deoxys.yml'), use_visualizer=False,
+        control_freq=1,
+        state_freq=200
+    )  # copied from playback_demo.py
+    reset_joint_positions = [
+            0.09162008114028396,
+            -0.19826458111314524,
+            -0.01990020486871322,
+            -2.4732269941140346,
+            -0.01307073642274261,
+            2.30396583422025,
+            0.8480939705504309,
+        ]
 
+    reset_joints_to(robot_interface, reset_joint_positions)  # reset joints to home position
+
+    prompt = "pick up the coke can"
 
     # Load demonstration data
-    filename = f"/home/ripl/openteach/extracted_data/demonstration_{args.demo}/demo_{args.demo}.pkl"
-    with open(filename, 'rb') as dbfile:
-        db = pkl.load(dbfile)
+    sys.path.append("/home/ripl/tensorflow_datasets")
 
-    images = db["rgb_imgs"][2]
-    prompt = "pick up the coke can"
-    breakpoint()
+    # module = importlib.import_module("franka_pick_coke")
+    ds = tfds.load("franka_pick_coke", split='train')
 
     # Load Processor & VLA
-    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+b8+lr-2e-05+lora-r32+dropout-0.0--image_aug"
+    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+b8+lr-2e-05+lora-r32+dropout-0.0+new_recording+coke1"
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForVision2Seq.from_pretrained(
         model_path,
@@ -143,120 +139,100 @@ def main(args):
         low_cpu_mem_usage=True,
         trust_remote_code=True
     )
+    # Create Action Tokenizer
+    action_tokenizer = ActionTokenizer(processor.tokenizer)
+
     dataset_statistics_path = os.path.join(model_path, "dataset_statistics.json")
     with open(dataset_statistics_path, "r") as f:
         norm_stats = json.load(f)
 
-    # make slight alterations to norm stats for testing purposes
-    for key in norm_stats['franka_pick_coke']['action'].keys():
-        if key == 'mask' or key == 'mean':
-            continue
-        norm_stats['franka_pick_coke']['action'][key] = [i * 10 for i in norm_stats['franka_pick_coke']['action'][key]]
-    breakpoint()
     model.norm_stats = norm_stats
     unnorm_key = "franka_pick_coke"
 
     # np array for storing action values
-    summary = None
+    summary_pred = None
+    summary_true = None
+    accuracy = 0
 
     # Main loop
     try:
-        for i, frame in enumerate(images):
-            # Convert the frame to PIL Image
-            # video_frame = cv2.resize(frame, (224, 224))
-            image: Image.Image = Image.fromarray(frame)
+        for i, episode in enumerate(ds.take(1)):
+            for j, st in enumerate(episode['steps']):
+                frame = st['observation']['image'].numpy()
+                # convert to rgb
+                # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                observation = {
+                            "full_image": frame,
+                            "state": None,
+                        }
 
-            observation = {
-                        "full_image": frame,
-                        "state": None,
-                    }
-            # breakpoint()
-            # Convert demonstration data to 6DOF actions
-            pos = db['eef_pose'][i, :3, 3]  # (x, y, z)
-            rpy = np.array(mat2euler(db['eef_pose'][i, :3, :3]))  # (roll, pitch, yaw)
+                recorded_action = st['action'].numpy()  # the action are deltas for (x, y, z, r, p, y, gripper)s
 
-            # calculate delta action to next step
-            # use eef_pose[t+1] - eef_pose[t]
-            if i < len(db['timestamps']) - 1:
-                next_pos = db['eef_pose'][i + 1, :3, 3]
-                next_rpy = np.array(mat2euler(db['eef_pose'][i + 1, :3, :3]))
-                delta_pos = next_pos - pos
-                delta_rpy = next_rpy - rpy
-                delta_gripper = [1 if db['gripper_cmd'][i+1] <= 0 else -1]
-            else:
-                delta_pos = np.zeros(3)
-                delta_rpy = np.zeros(3)
-                delta_gripper = [1 if db['gripper_cmd'][i] <= 0 else -1]
-            recorded_action = np.concatenate((delta_pos, delta_rpy, delta_gripper))
+                # get predicted action
+                action = get_vla_action(
+                    model,
+                    processor,
+                    "openvla",
+                    observation,
+                    prompt,
+                    unnorm_key,
+                    False
+                )
+                action = normalize_gripper_action(action, binarize=True)
+                action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))
+                recorded_action = normalize_gripper_action(recorded_action, binarize=True)
+                recorded_action[3:6] = quat2axisangle(mat2quat(euler2mat(recorded_action[3:6])))
 
-            # get predicted action
-            action = get_vla_action(
-                model,
-                processor,
-                "openvla",
-                observation,
-                prompt,
-                unnorm_key,
-                True
-            )
+                # Move robot
+                # robot_interface.control(
+                #         controller_type='OSC_POSE',
+                #         action=action[:6],
+                #         controller_cfg=DEFAULT_CONTROLLER,
+                #     )
+                # robot_interface.gripper_control(-1 if action[6] == 1 else 1)
 
-            # Predict Action (7-DoF; un-normalize)
-            print(f"Action:   {action})")
-            print(f"Expected: {recorded_action})\n")
+                # Predict Action (7-DoF; un-normalize)
+                print(f"Predicted: {action}")
+                print(f"Recorded:  {recorded_action}")
+                print(f"Match:   {action_tokenizer(action) == action_tokenizer(recorded_action)}")
+                accuracy = accuracy + (1 if action_tokenizer(action) == action_tokenizer(recorded_action) else 0)
+                print(f"Accuracy: {accuracy / (j + 1)}")
 
-            # Display the image Press 'q' to exit
-            cv2.imshow("Camera", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
 
-            # graph action values on a line graph
-    #         if summary is None:
-    #             summary = action
-    #         else:
-    #             summary = np.vstack((summary, action))
+
+                # graph action values on a line graph
+                if summary_pred is None:
+                    summary_pred = action
+                    summary_true = recorded_action
+                else:
+                    summary_pred = np.vstack((summary_pred, action))
+                    summary_true = np.vstack((summary_true, recorded_action))
+
+
+                # Display the image Press 'q' to exit
+                cv2.imshow("Camera", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
     finally:
-        pass
-    #     cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
+        # Graph overlapping elements from summary_pred and summary_true
+        # breakpoint()
+        titles = ["x", "y", "z", "roll", "pitch", "yaw", "gripper"]
+        plt.figure(figsize=(12, 8))
+        for i in range(summary_pred.shape[1]):
+            plt.subplot(2, 4, i+1)
+            plt.plot(summary_pred[:, i], label=f"Pred")
+            plt.plot(summary_true[:, i], label=f"True")
+            plt.legend()
+            plt.xlabel("Step")
+            plt.ylabel("Action Value")
+            plt.title(f"{titles[i]}")
+            plt.ylim(-1.1, 1.1)
+            plt.legend(loc='lower right')
+        plt.tight_layout()
+        plt.show()
 
-    #     # Create line graphs from summary
-    #     plt.subplot(2, 2, 1)
-    #     plt.plot(summary[:, 0])
-    #     plt.plot(np.array(recoded_actions[:summary.shape[0]])[:, 0])
-    #     plt.xlabel('Frame')
-    #     plt.ylabel('Delta Value')
-    #     plt.title('Action Values Over Time (x)')
-    #     plt.legend(['VLA Output', 'Expected'])
-    #     plt.ylim(-.5, .5)
 
-    #     plt.subplot(2, 2, 2)
-    #     plt.plot(summary[:, 1])
-    #     plt.plot(np.array(recoded_actions[:summary.shape[0]])[:, 1])
-    #     plt.xlabel('Frame')
-    #     plt.ylabel('Delta Value')
-    #     plt.title('Action Values Over Time (y)')
-    #     plt.legend(['VLA Output', 'Expected'])
-    #     plt.ylim(-.5, .5)
-
-    #     plt.subplot(2, 2, 3)
-    #     plt.plot(summary[:, 2])
-    #     plt.plot(np.array(recoded_actions[:summary.shape[0]])[:, 2])
-    #     plt.xlabel('Frame')
-    #     plt.ylabel('Delta Value')
-    #     plt.title('Action Values Over Time (z)')
-    #     plt.legend(['VLA Output', 'Expected'])
-    #     plt.ylim(-.5, .5)
-
-    #     plt.subplot(2, 2, 4)
-    #     plt.plot(summary[:, -1])
-    #     plt.plot(1 - (np.array(recoded_actions[:summary.shape[0]])[:, -1] / 2))
-    #     plt.xlabel('Frame')
-    #     plt.ylabel('Delta Value')
-    #     plt.title('Action Values Over Time (g)')
-    #     plt.legend(['VLA Output', 'Expected'])
-    #     plt.ylim(-0.01, 1.01)
-
-    #     plt.tight_layout()
-    #     plt.show()
 if __name__ == "__main__":
     main(parser.parse_args())

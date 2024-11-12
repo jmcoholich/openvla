@@ -31,15 +31,8 @@ from prismatic.vla.datasets.rlds.utils.data_utils import (
 def franka_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     """
     """
-    trajectory["action"] = tf.concat(
-        [
-            trajectory["action"][:, :6],
-            binarize_gripper_actions(trajectory["action"][:, -1])[:, None],
-        ],
-        axis=1,
-    )
-    trajectory["observation"]["EEF_state"] = trajectory["observation"]["state"][:, :6]
-    trajectory["observation"]["gripper_state"] = trajectory["observation"]["gripper_state"][:, -1]
+    # trajectory["observation"]["EEF_state"] = trajectory["observation"]["state"][:, :6]
+    # trajectory["observation"]["gripper_state"] = trajectory["observation"]["gripper_state"][:, -1]
     return trajectory
 
 

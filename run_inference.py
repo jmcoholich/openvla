@@ -7,16 +7,16 @@ from openteach.utils.network import ZMQCameraSubscriber
 
 # openVLA
 from transformers import AutoModelForVision2Seq, AutoProcessor
-from experiments.robot.robot_utils import get_vla_action
+from experiments.robot.robot_utils import get_vla_action, normalize_gripper_action
 
 # deoxys_control
 from deoxys.franka_interface import FrankaInterface
 import deoxys.proto.franka_interface.franka_controller_pb2 as franka_controller_pb2
 from deoxys.utils.config_utils import get_default_controller_config
-from deoxys_control.osc_control import move_to_target_pose, reset_joints_to  # borrowing this to move based on deltas
-from deoxys_control.delta_gripper import delta_gripper, reset_gripper
+from examples.osc_control import move_to_target_pose
+from deoxys.experimental.motion_utils import reset_joints_to
 from deoxys.utils.log_utils import get_deoxys_example_logger
-from deoxys.utils.transform_utils import quat2axisangle
+from deoxys.utils.transform_utils import quat2axisangle, mat2quat, euler2mat
 
 # General
 import torch
@@ -25,13 +25,45 @@ from time import sleep
 import matplotlib.pyplot as plt
 import os
 import json
+from easydict import EasyDict
 
+
+DEFAULT_CONTROLLER = EasyDict({
+    'controller_type': 'OSC_POSE',
+    'is_delta': True,
+    'traj_interpolator_cfg': {
+        'traj_interpolator_type': 'LINEAR_POSE',
+        'time_fraction': 0.3
+    },
+    'Kp': {
+        'translation': [250.0, 250.0, 250.0],
+        'rotation': [250.0, 250.0, 250.0]
+    },
+    'action_scale': {
+        'translation': 0.5,
+        'rotation': 1.0
+    },
+    'residual_mass_vec': [0.0, 0.0, 0.0, 0.0, 0.1, 0.5, 0.5],
+    'state_estimator_cfg': {
+        'is_estimation': False,
+        'state_estimator_type': 'EXPONENTIAL_SMOOTHING',
+        'alpha_q': 0.9,
+        'alpha_dq': 0.9,
+        'alpha_eef': 1.0,
+        'alpha_eef_vel': 1.0
+    }
+})
 
 def main():
     # Initialize robot
     logger = get_deoxys_example_logger()  # logger for debugging
 
-    robot_interface = FrankaInterface("/home/ripl/deoxys_control/deoxys/config/charmander.yml", use_visualizer=False)  # hardcoded path to config file, probably should change
+    robot_interface = FrankaInterface(
+        os.path.join('/home/ripl/openteach/configs', 'deoxys.yml'), use_visualizer=False,
+        control_freq=60,
+        state_freq=200
+    )  # copied from playback_demo.py
+
     controller_type = "OSC_POSE"  # controls end effector in 6 dimensions, need to use serpeate controller for gripper
     controller_cfg = get_default_controller_config(controller_type=controller_type)
     # Golden resetting joints
@@ -46,12 +78,11 @@ def main():
         ]
 
     easy_start = [ 0.04542551, 0.41048467, 0.0139709, -1.83497724, -0.14513091, 2.2443767, 1.06756333]
-    reset_joints_to(robot_interface, reset_joint_positions)  # reset joints to home position
-    reset_gripper(robot_interface, logger)  # reset gripper to open
+    reset_joints_to(robot_interface, easy_start)  # reset joints to home position
 
 
     # Load Processor & VLA
-    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+b8+lr-2e-05+lora-r32+dropout-0.0+360x360"
+    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+b8+lr-2e-05+lora-r32+dropout-0.0+new_recording+coke1"
     vla_path = "openvla/openvla-7b"
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForVision2Seq.from_pretrained(
@@ -68,12 +99,7 @@ def main():
     # breakpoint()
 
     unnorm_key = "franka_pick_coke"
-    # unnorm_key = "dlr_edan_shared_control_converted_externally_to_rlds"  # cam near base angled towards table
-    # unnorm_key = "nyu_franka_play_dataset_converted_externally_to_rlds"  # franka robot cam angled away from base
-    # unnorm_key = "stanford_hydra_dataset_converted_externally_to_rlds"  # franka robot cam angled towards base
-    # unnorm_key = "utaustin_mutex"  # franka robot cam straight on: this gives much bigger values than other keys so the robot moves fast
     task_label = "pick up the coke can"  # task to perform
-    prompt = f"In: What action should the robot take to {task_label} ?\nOut:"
 
     # Configure Camera Stream
     image_subscriber = ZMQCameraSubscriber(
@@ -86,6 +112,7 @@ def main():
 
     # Main loop
     try:
+        # can I feed in training images and see how the robot moves
         while True:
             # Wait for a color frame
             frames = image_subscriber.recv_rgb_image()
@@ -94,25 +121,11 @@ def main():
             if color_frame is None:
                 continue
 
-            # breakpoint()
             color_frame = color_frame[:, 140:500]  # center crop 360x360
-            # color_frame = color_frame[:, :, ::-1]  # BGR to RGB
-            # color_frame = cv2.resize(color_frame[:, 140:500], (224, 224))  # make the image square then scale to 224x224
 
-            # Convert the frame to PIL Image
-            # image: Image.Image = Image.fromarray(color_frame)
+            observation = {"full_image": color_frame}
 
-            observation = {
-                        "full_image": color_frame,
-                        "state": np.concatenate(
-                            (robot_interface.last_eef_quat_and_pos[1].flatten(),
-                             quat2axisangle(robot_interface.last_eef_quat_and_pos[0]),
-                             [robot_interface.last_gripper_q])
-                        ),
-                    }
-            # breakpoint()
-            # Query model to get action
-
+            # pass through model
             action = get_vla_action(
                 model,
                 processor,
@@ -122,23 +135,17 @@ def main():
                 unnorm_key,
                 center_crop=True
             )
-            # action[:-1] = [i*10 for i in action[:-1]]
+            # action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))  # convert euler to axis-angle
+            action = normalize_gripper_action(action, binarize=True)  # normalize gripper action
+            print(f"predicted: {action}")
 
-            # # Predict Action (7-DoF; un-normalize)
-            # inputs = processor(prompt, image).to("cuda:0", dtype=torch.bfloat16)
-            # action = vla.predict_action(**inputs, unnorm_key="nyu_franka_play_dataset_converted_externally_to_rlds", do_sample=False)
-            print(action)
-
-            move_to_target_pose(
-                robot_interface,
-                controller_type,
-                controller_cfg,
-                target_delta_pose=action[:6],
-                num_steps=1,
-                num_additional_steps=0,
-                interpolation_method="linear",
-                )
-            delta_gripper(robot_interface, logger, action[6])
+            # Move robot
+            robot_interface.control(
+                controller_type='OSC_POSE',
+                action=action[:6],
+                controller_cfg=DEFAULT_CONTROLLER,
+            )
+            robot_interface.gripper_control(-action[-1])
 
             # Display the image Press 'q' to exit
             cv2.imshow("Camera", color_frame)
@@ -155,12 +162,12 @@ def main():
         cv2.destroyAllWindows()
 
         # Create line graph from summary
-        plt.plot(summary)
-        plt.xlabel('Frame')
-        plt.ylabel('Action Value')
-        plt.title('Action Values Over Time')
-        plt.legend(['x', 'y', 'z', 'roll', 'pitch', 'yaw', 'gripper'])
-        plt.show()
+        # plt.plot(summary)
+        # plt.xlabel('Frame')
+        # plt.ylabel('Action Value')
+        # plt.title('Action Values Over Time')
+        # plt.legend(['x', 'y', 'z', 'roll', 'pitch', 'yaw', 'gripper'])
+        # plt.show()
 
 if __name__ == "__main__":
     main()

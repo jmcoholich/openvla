@@ -60,7 +60,7 @@ def main():
 
     robot_interface = FrankaInterface(
         os.path.join('/home/ripl/openteach/configs', 'deoxys.yml'), use_visualizer=False,
-        control_freq=60,
+        control_freq=1,
         state_freq=200
     )  # copied from playback_demo.py
 
@@ -82,8 +82,8 @@ def main():
 
 
     # Load Processor & VLA
-    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+b8+lr-2e-05+lora-r32+dropout-0.0+new_recording+coke1"
-    vla_path = "openvla/openvla-7b"
+    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+RGB+Euler+cmd_gripper"
+    # vla_path = "openvla/openvla-7b"
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForVision2Seq.from_pretrained(
         model_path,
@@ -122,6 +122,8 @@ def main():
                 continue
 
             color_frame = color_frame[:, 140:500]  # center crop 360x360
+            color_frame = cv2.resize(color_frame, (224, 224))  # resize for image processor
+            color_frame = cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB)  # convert to RGB
 
             observation = {"full_image": color_frame}
 
@@ -133,9 +135,9 @@ def main():
                 observation,
                 task_label,
                 unnorm_key,
-                center_crop=True
+                center_crop=False
             )
-            # action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))  # convert euler to axis-angle
+            action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))  # convert euler to axis-angle
             action = normalize_gripper_action(action, binarize=True)  # normalize gripper action
             print(f"predicted: {action}")
 
@@ -145,10 +147,10 @@ def main():
                 action=action[:6],
                 controller_cfg=DEFAULT_CONTROLLER,
             )
-            robot_interface.gripper_control(-action[-1])
+            robot_interface.gripper_control(action[-1])
 
             # Display the image Press 'q' to exit
-            cv2.imshow("Camera", color_frame)
+            cv2.imshow("Camera", cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB))  # convert back to BGR for cv2
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 

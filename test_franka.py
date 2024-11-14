@@ -37,8 +37,6 @@ import importlib
 import tensorflow_datasets as tfds
 from easydict import EasyDict
 
-parser = argparse.ArgumentParser()
-parser.add_argument("demo", type=str, help="The name of the demonstration to visualize")
 
 PI = np.pi
 EPS = np.finfo(float).eps * 4.0
@@ -103,7 +101,7 @@ DEFAULT_CONTROLLER = EasyDict({
 })
 
 
-def main(args):
+def main():
     robot_interface = FrankaInterface(
         os.path.join('/home/ripl/openteach/configs', 'deoxys.yml'), use_visualizer=False,
         control_freq=1,
@@ -119,7 +117,7 @@ def main(args):
             0.8480939705504309,
         ]
 
-    reset_joints_to(robot_interface, reset_joint_positions)  # reset joints to home position
+    # reset_joints_to(robot_interface, reset_joint_positions)  # reset joints to home position
 
     prompt = "pick up the coke can"
 
@@ -127,10 +125,10 @@ def main(args):
     sys.path.append("/home/ripl/tensorflow_datasets")
 
     # module = importlib.import_module("franka_pick_coke")
-    ds = tfds.load("franka_pick_coke", split='train')
+    ds = tfds.load("franka_pick_coke_rgb", split='train')
 
     # Load Processor & VLA
-    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+b8+lr-2e-05+lora-r32+dropout-0.0+new_recording+coke1"
+    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+RGB+Euler+cmd_gripper"
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForVision2Seq.from_pretrained(
         model_path,
@@ -159,14 +157,13 @@ def main(args):
         for i, episode in enumerate(ds.take(1)):
             for j, st in enumerate(episode['steps']):
                 frame = st['observation']['image'].numpy()
-                # convert to rgb
-                # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # frame = cv2.resize(frame, (224, 224))  # for some reason the image processor expects 224x224 not 360x360
                 observation = {
                             "full_image": frame,
                             "state": None,
                         }
 
-                recorded_action = st['action'].numpy()  # the action are deltas for (x, y, z, r, p, y, gripper)s
+                recorded_action = st['action'].numpy()  # the action are deltas for (x, y, z, r, p, y, gripper)
 
                 # get predicted action
                 action = get_vla_action(
@@ -178,10 +175,11 @@ def main(args):
                     unnorm_key,
                     False
                 )
+                # breakpoint()
                 action = normalize_gripper_action(action, binarize=True)
-                action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))
+                # action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))
                 recorded_action = normalize_gripper_action(recorded_action, binarize=True)
-                recorded_action[3:6] = quat2axisangle(mat2quat(euler2mat(recorded_action[3:6])))
+                # recorded_action[3:6] = quat2axisangle(mat2quat(euler2mat(recorded_action[3:6])))
 
                 # Move robot
                 # robot_interface.control(
@@ -189,7 +187,7 @@ def main(args):
                 #         action=action[:6],
                 #         controller_cfg=DEFAULT_CONTROLLER,
                 #     )
-                # robot_interface.gripper_control(-1 if action[6] == 1 else 1)
+                # robot_interface.gripper_control(action[6])
 
                 # Predict Action (7-DoF; un-normalize)
                 print(f"Predicted: {action}")
@@ -210,7 +208,7 @@ def main(args):
 
 
                 # Display the image Press 'q' to exit
-                cv2.imshow("Camera", frame)
+                cv2.imshow("Camera", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
@@ -235,4 +233,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(parser.parse_args())
+    main()

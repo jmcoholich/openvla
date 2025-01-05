@@ -24,7 +24,7 @@ srun -u torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune
   --wandb_project openvla \
   --wandb_entity jwit3-georgia-institute-of-technology \
   --shuffle_buffer_size 8000 \
-  --run_id_note debug
+  --run_id_note $1 \
 #   --save_steps <NUMBER OF GRADIENT STEPS PER CHECKPOINT SAVE>
 #   --run_root_dir <PATH TO LOG/CHECKPOINT DIR> \
 #   --adapter_tmp_dir <PATH TO TEMPORARY DIR TO SAVE ADAPTER WEIGHTS> \

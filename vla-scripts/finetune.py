@@ -121,19 +121,20 @@ def finetune(cfg: FinetuneConfig) -> None:
     torch.cuda.empty_cache()
 
     # Configure Unique Experiment ID & Log Directory
-    exp_id = (
-        f"{cfg.vla_path.split('/')[-1]}+{cfg.dataset_name}"
-        f"+b{cfg.batch_size * cfg.grad_accumulation_steps}"
-        f"+lr-{cfg.learning_rate}"
-    )
-    if cfg.use_lora:
-        exp_id += f"+lora-r{cfg.lora_rank}+dropout-{cfg.lora_dropout}"
-    if cfg.use_quantization:
-        exp_id += "+q-4bit"
+    # exp_id = (
+    #     f"{cfg.vla_path.split('/')[-1]}+{cfg.dataset_name}"
+    #     f"+b{cfg.batch_size * cfg.grad_accumulation_steps}"
+    #     f"+lr-{cfg.learning_rate}"
+    # )
+    exp_id = ""
+    # if cfg.use_lora:
+    #     exp_id += f"+lora-r{cfg.lora_rank}+dropout-{cfg.lora_dropout}"
+    # if cfg.use_quantization:
+    #     exp_id += "+q-4bit"
     if cfg.run_id_note is not None:
-        exp_id += f"--{cfg.run_id_note}"
-    if cfg.image_aug:
-        exp_id += "--image_aug"
+        exp_id += f"{cfg.run_id_note}"
+    # if cfg.image_aug:
+    #     exp_id += "--image_aug"
 
     # Start =>> Build Directories
     run_dir, adapter_dir = cfg.run_root_dir / exp_id, cfg.adapter_tmp_dir / exp_id
@@ -239,7 +240,7 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Initialize Logging =>> W&B
     if distributed_state.is_main_process:
-        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{exp_id}")
+        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"{exp_id}", config=cfg)
 
     # Deque to store recent train metrics (used for computing smoothened metrics for gradient accumulation)
     recent_losses = deque(maxlen=cfg.grad_accumulation_steps)

@@ -444,6 +444,9 @@ def cmu_franka_exploration_dataset_transform(trajectory: Dict[str, Any]) -> Dict
     trajectory["action"] = trajectory["action"][..., :-1]
     return trajectory
 
+def syn_coke_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    return trajectory
+
 
 def ucsd_kitchen_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     trajectory["observation"]["joint_state"] = trajectory["observation"]["state"][:, :7]
@@ -826,6 +829,7 @@ def tdroid_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
+    "syn_coke": syn_coke_dataset_transform,
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,
     "bridge_dataset": bridge_orig_dataset_transform,

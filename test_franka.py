@@ -125,26 +125,26 @@ def main():
     sys.path.append("/home/ripl/tensorflow_datasets")
 
     # module = importlib.import_module("franka_pick_coke")
-    ds = tfds.load("franka_pick_coke_rgb", split='train')
+    ds = tfds.load("franka_pick_coke", split='train')
 
     # Load Processor & VLA
-    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+RGB+Euler+cmd_gripper"
-    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModelForVision2Seq.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",  # should use all available GPUs
-        low_cpu_mem_usage=True,
-        trust_remote_code=True
-    )
-    # Create Action Tokenizer
-    action_tokenizer = ActionTokenizer(processor.tokenizer)
+    # model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+image_aug+5Hz_20_demo+RGB+Euler+-11gripper+224"
+    # processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    # model = AutoModelForVision2Seq.from_pretrained(
+    #     model_path,
+    #     torch_dtype=torch.bfloat16,
+    #     device_map="auto",  # should use all available GPUs
+    #     low_cpu_mem_usage=True,
+    #     trust_remote_code=True
+    # )
+    # # Create Action Tokenizer
+    # action_tokenizer = ActionTokenizer(processor.tokenizer)
 
-    dataset_statistics_path = os.path.join(model_path, "dataset_statistics.json")
-    with open(dataset_statistics_path, "r") as f:
-        norm_stats = json.load(f)
+    # dataset_statistics_path = os.path.join(model_path, "dataset_statistics.json")
+    # with open(dataset_statistics_path, "r") as f:
+    #     norm_stats = json.load(f)
 
-    model.norm_stats = norm_stats
+    # model.norm_stats = norm_stats
     unnorm_key = "franka_pick_coke"
 
     # np array for storing action values
@@ -166,15 +166,15 @@ def main():
                 recorded_action = st['action'].numpy()  # the action are deltas for (x, y, z, r, p, y, gripper)
 
                 # get predicted action
-                action = get_vla_action(
-                    model,
-                    processor,
-                    "openvla",
-                    observation,
-                    prompt,
-                    unnorm_key,
-                    False
-                )
+                # action = get_vla_action(
+                #     model,
+                #     processor,
+                #     "openvla",
+                #     observation,
+                #     prompt,
+                #     unnorm_key,
+                #     False
+                # )
                 # breakpoint()
                 action = normalize_gripper_action(action, binarize=True)
                 # action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))
@@ -189,12 +189,12 @@ def main():
                 #     )
                 # robot_interface.gripper_control(action[6])
 
-                # Predict Action (7-DoF; un-normalize)
-                print(f"Predicted: {action}")
-                print(f"Recorded:  {recorded_action}")
-                print(f"Match:   {action_tokenizer(action) == action_tokenizer(recorded_action)}")
-                accuracy = accuracy + (1 if action_tokenizer(action) == action_tokenizer(recorded_action) else 0)
-                print(f"Accuracy: {accuracy / (j + 1)}")
+                # # Predict Action (7-DoF; un-normalize)
+                # print(f"Predicted: {action}")
+                # print(f"Recorded:  {recorded_action}")
+                # print(f"Match:   {action_tokenizer(action) == action_tokenizer(recorded_action)}")
+                # accuracy = accuracy + (1 if action_tokenizer(action) == action_tokenizer(recorded_action) else 0)
+                # print(f"Accuracy: {accuracy / (j + 1)}")
 
 
 
@@ -208,28 +208,29 @@ def main():
 
 
                 # Display the image Press 'q' to exit
-                cv2.imshow("Camera", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-
+#                cv2.imshow("Camera", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+#                if cv2.waitKey(1) & 0xFF == ord('q'):
+#                    break
+        print(j)
     finally:
-        cv2.destroyAllWindows()
+        pass
+#        cv2.destroyAllWindows()
         # Graph overlapping elements from summary_pred and summary_true
         # breakpoint()
-        titles = ["x", "y", "z", "roll", "pitch", "yaw", "gripper"]
-        plt.figure(figsize=(12, 8))
-        for i in range(summary_pred.shape[1]):
-            plt.subplot(2, 4, i+1)
-            plt.plot(summary_pred[:, i], label=f"Pred")
-            plt.plot(summary_true[:, i], label=f"True")
-            plt.legend()
-            plt.xlabel("Step")
-            plt.ylabel("Action Value")
-            plt.title(f"{titles[i]}")
-            plt.ylim(-1.1, 1.1)
-            plt.legend(loc='lower right')
-        plt.tight_layout()
-        plt.show()
+#        titles = ["x", "y", "z", "roll", "pitch", "yaw", "gripper"]
+#        plt.figure(figsize=(12, 8))
+#        for i in range(summary_pred.shape[1]):
+#            plt.subplot(2, 4, i+1)
+#            plt.plot(summary_pred[:, i], label=f"Pred")
+#            plt.plot(summary_true[:, i], label=f"True")
+#            plt.legend()
+#            plt.xlabel("Step")
+#            plt.ylabel("Action Value")
+#            plt.title(f"{titles[i]}")
+#            plt.ylim(-1.1, 1.1)
+#            plt.legend(loc='lower right')
+#        plt.tight_layout()
+#        plt.show()
 
 
 if __name__ == "__main__":

@@ -78,11 +78,11 @@ def main():
         ]
 
     easy_start = [ 0.04542551, 0.41048467, 0.0139709, -1.83497724, -0.14513091, 2.2443767, 1.06756333]
-    reset_joints_to(robot_interface, easy_start)  # reset joints to home position
+    reset_joints_to(robot_interface, reset_joint_positions)  # reset joints to home position
 
 
     # Load Processor & VLA
-    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke+RGB+Euler+cmd_gripper"
+    model_path = "/home/ripl/openvla/runs/openvla-7b+franka_pick_coke_100demos+b32+lr-2e-05+lora-r32+dropout-0.0--8GPU+256batch+SB8k--image_aug"
     # vla_path = "openvla/openvla-7b"
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForVision2Seq.from_pretrained(
@@ -98,7 +98,7 @@ def main():
     model.norm_stats = norm_stats
     # breakpoint()
 
-    unnorm_key = "franka_pick_coke"
+    unnorm_key = "franka_pick_coke_100demos"
     task_label = "pick up the coke can"  # task to perform
 
     # Configure Camera Stream
@@ -107,13 +107,13 @@ def main():
             port = "10007",  # 5 - top, 6 - side, 7 - front
             topic_type = 'RGB'
         )
-    # np array for storing action values
-    summary = None
 
     # Main loop
     try:
         # can I feed in training images and see how the robot moves
+        i = 0
         while True:
+            i += 1
             # Wait for a color frame
             frames = image_subscriber.recv_rgb_image()
             color_frame = frames[0]
@@ -135,11 +135,11 @@ def main():
                 observation,
                 task_label,
                 unnorm_key,
-                center_crop=False
+                center_crop=True
             )
             action[3:6] = quat2axisangle(mat2quat(euler2mat(action[3:6])))  # convert euler to axis-angle
             action = normalize_gripper_action(action, binarize=True)  # normalize gripper action
-            print(f"predicted: {action}")
+            print(f"step {i} predicted: {action}")
 
             # Move robot
             robot_interface.control(
@@ -150,26 +150,13 @@ def main():
             robot_interface.gripper_control(action[-1])
 
             # Display the image Press 'q' to exit
-            cv2.imshow("Camera", cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB))  # convert back to BGR for cv2
+            cv2.imshow("Camera", cv2.cvtColor(color_frame, cv2.COLOR_RGB2BGR))  # convert back to BGR for cv2
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            # graph action values on a line graph
-            # if summary is None:
-            #     summary = action
-            # else:
-            #     summary = np.vstack((summary, action))
 
     finally:
         cv2.destroyAllWindows()
-
-        # Create line graph from summary
-        # plt.plot(summary)
-        # plt.xlabel('Frame')
-        # plt.ylabel('Action Value')
-        # plt.title('Action Values Over Time')
-        # plt.legend(['x', 'y', 'z', 'roll', 'pitch', 'yaw', 'gripper'])
-        # plt.show()
 
 if __name__ == "__main__":
     main()

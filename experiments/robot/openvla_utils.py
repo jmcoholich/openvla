@@ -154,6 +154,7 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
         # Convert back to PIL Image
         image = Image.fromarray(image.numpy())
         image = image.convert("RGB")
+        image = image.resize((224, 224))
     # Build VLA prompt
     if "openvla-v01" in base_vla_name:  # OpenVLA v0.1
         prompt = (

@@ -37,7 +37,8 @@ DEFAULT_CONTROLLER = EasyDict({
         'rotation': [250.0, 250.0, 250.0]
     },
     'action_scale': {
-        'translation': 0.5,
+        # 'translation': 0.5,  # VR collected demo uses 0.5
+        'translation': 1.0,
         'rotation': 1.0
     },
     'residual_mass_vec': [0.0, 0.0, 0.0, 0.0, 0.1, 0.5, 0.5],

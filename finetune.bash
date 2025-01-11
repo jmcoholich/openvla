@@ -17,10 +17,10 @@ conda activate openvla
 srun -u torchrun --standalone --nnodes 1 --nproc-per-node 4 vla-scripts/finetune.py \
   --vla_path "openvla/openvla-7b" \
   --data_root_dir datasets \
-  --dataset_name syn_coke \
+  --dataset_name syn_coke_all \
   --lora_rank 32 \
   --batch_size 8 \
-  --grad_accumulation_steps 8 \
+  --grad_accumulation_steps 4 \
   --learning_rate 5e-4 \
   --image_aug False \
   --wandb_project openvla \

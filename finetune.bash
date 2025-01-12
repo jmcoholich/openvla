@@ -3,9 +3,7 @@
 #SBATCH --output=openvla.out
 #SBATCH --error=openvla.err
 #SBATCH --partition="kira-lab"
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-gpu=12
+#SBATCH --cpus-per-gpu=8
 #SBATCH --gpus-per-node="a40:4"
 #SBATCH --qos="short"
 #SBATCH --exclude="clippy"

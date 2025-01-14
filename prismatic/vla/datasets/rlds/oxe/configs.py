@@ -298,6 +298,17 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
+    "syn_coke10k": {
+        "image_obs_keys": {
+            "primary": "image",
+            "secondary": None,
+            "wrist": None,
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["state", "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
     "ucsd_kitchen_dataset_converted_externally_to_rlds": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},

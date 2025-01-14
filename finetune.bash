@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=ftopenvla_8gpu
-#SBATCH --output=openvla_syn_coke_10k.out
-#SBATCH --error=openvla_syn_coke_10k.err
+#SBATCH --job-name=ftopenvla_4gpu
+#SBATCH --output=openvla_syn_coke_1k_match.out
+#SBATCH --error=openvla_syn_coke_1k_match.err
 #SBATCH --partition="kira-lab"
 #SBATCH --cpus-per-gpu=8
-#SBATCH --gpus-per-node="a40:8"
+#SBATCH --gpus-per-node="a40:4"
 #SBATCH --qos="short"
 #SBATCH --exclude="clippy"
 
@@ -12,10 +12,10 @@ USER=$(whoami)
 source /coc/testnvme/$USER/.bashrc
 conda activate openvla
 
-srun -u torchrun --standalone --nnodes 1 --nproc-per-node 8 vla-scripts/finetune.py \
+srun -u torchrun --standalone --nnodes 1 --nproc-per-node 4 vla-scripts/finetune.py \
   --vla_path "openvla/openvla-7b" \
   --data_root_dir datasets \
-  --dataset_name syn_coke10k \
+  --dataset_name syn_coke1k_match \
   --lora_rank 32 \
   --batch_size 8 \
   --grad_accumulation_steps 4 \

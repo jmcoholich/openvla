@@ -8,14 +8,14 @@
 #SBATCH --qos="short"
 #SBATCH --exclude="clippy"
 
-USER=$(whoami)
-source /coc/testnvme/$USER/.bashrc
-conda activate openvla
+# USER=$(whoami)
+# source /coc/testnvme/$USER/.bashrc
+# conda activate openvla
 
-srun -u torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
+torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
   --vla_path "openvla/openvla-7b" \
   --data_root_dir datasets \
-  --dataset_name syn_coke10k_all \
+  --dataset_name syn_coke1k_match \
   --lora_rank 32 \
   --batch_size 8 \
   --grad_accumulation_steps 4 \

@@ -833,6 +833,7 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "syn_coke": syn_coke_dataset_transform,
     "syn_coke_all": syn_coke_dataset_transform,
     "syn_coke10k": syn_coke_dataset_transform,
+    "syn_coke1k_match": syn_coke_dataset_transform,
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,
     "bridge_dataset": bridge_orig_dataset_transform,
